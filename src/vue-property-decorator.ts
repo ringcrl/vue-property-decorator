@@ -1,20 +1,25 @@
 /** vue-property-decorator verson 9.0.0 MIT LICENSE copyright 2020 kaorun343 */
 /// <reference types='reflect-metadata'/>
 'use strict'
-import Vue, { PropOptions, WatchOptions } from 'vue'
-import Component, { createDecorator, mixins } from 'vue-class-component'
-import { InjectKey, ComponentOptions } from 'vue/types/options'
+import { ComponentPropsOptions, WatchOptions, ComponentOptions } from 'vue'
+import { Options, createDecorator, mixins, Vue } from 'vue-class-component'
+
+export type InjectKey = string | symbol
 
 export type Constructor = {
   new (...args: any[]): any
 }
 
-export { Component, Vue, mixins as Mixins }
+export { Options as Component, Vue, mixins as Mixins }
 
 /** Used for keying reactive provide/inject properties */
 const reactiveInjectKey = '__reactiveInject__'
 
 type InjectOptions = { from?: InjectKey; default?: any }
+
+function isPromise(obj: any): obj is Promise<any> {
+  return obj instanceof Promise || (obj && typeof obj.then === 'function')
+}
 
 /**
  * decorator of an inject
@@ -43,10 +48,10 @@ export function InjectReactive(options?: InjectOptions | InjectKey) {
       componentOptions.inject = {}
     }
     if (!Array.isArray(componentOptions.inject)) {
-      const fromKey = !!options ? (options as any).from || options : key
+      const fromKey = options ? (options as any).from || options : key
       const defaultVal = (!!options && (options as any).default) || undefined
       if (!componentOptions.computed) componentOptions.computed = {}
-      componentOptions.computed![key] = function () {
+      componentOptions.computed![key] = function() {
         const obj = (this as any)[reactiveInjectKey]
         return obj ? obj[fromKey] : defaultVal
       }
@@ -55,31 +60,27 @@ export function InjectReactive(options?: InjectOptions | InjectKey) {
   })
 }
 
-interface provideObj {
+interface IProvideObj {
   managed?: { [k: string]: any }
   managedReactive?: { [k: string]: any }
 }
-type provideFunc = ((this: any) => Object) & provideObj
+type provideFunc = ((this: any) => Record<string, any>) & IProvideObj
 
 function produceProvide(original: any) {
-  let provide: provideFunc = function (this: any) {
+  const provide: provideFunc = function(this: any) {
     let rv = typeof original === 'function' ? original.call(this) : original
     rv = Object.create(rv || null)
     // set reactive services (propagates previous services if necessary)
     rv[reactiveInjectKey] = Object.create(this[reactiveInjectKey] || {})
-    for (let i in provide.managed) {
+    for (const i in provide.managed) {
       rv[provide.managed[i]] = this[i]
     }
-    for (let i in provide.managedReactive) {
+    for (const i in provide.managedReactive) {
       rv[provide.managedReactive[i]] = this[i] // Duplicates the behavior of `@Provide`
-      Object.defineProperty(
-        rv[reactiveInjectKey],
-        provide.managedReactive[i],
-        {
+      Object.defineProperty(rv[reactiveInjectKey], provide.managedReactive[i], {
         enumerable: true,
         get: () => this[i],
-        },
-      )
+      })
     }
     return rv
   }
@@ -89,10 +90,7 @@ function produceProvide(original: any) {
 }
 
 function needToProduceProvide(original: any) {
-  return (
-    typeof original !== 'function' ||
-    (!original.managed && !original.managedReactive)
-  )
+  return typeof original !== 'function' || (!original.managed && !original.managedReactive)
 }
 
 function inheritInjected(componentOptions: ComponentOptions<Vue>) {
@@ -143,9 +141,9 @@ const reflectMetadataIsSupported =
   typeof Reflect !== 'undefined' && typeof Reflect.getMetadata !== 'undefined'
 
 function applyMetadata(
-  options: PropOptions | Constructor[] | Constructor,
+  options: ComponentPropsOptions | Constructor[] | Constructor,
   target: Vue,
-  key: string,
+  key: string
 ) {
   if (reflectMetadataIsSupported) {
     if (
@@ -169,14 +167,12 @@ function applyMetadata(
  */
 export function Model(
   event?: string,
-  options: PropOptions | Constructor[] | Constructor = {},
+  options: ComponentPropsOptions | Constructor[] | Constructor = {}
 ) {
   return (target: Vue, key: string) => {
     applyMetadata(options, target, key)
     createDecorator((componentOptions, k) => {
-      ;(componentOptions.props || ((componentOptions.props = {}) as any))[
-        k
-      ] = options
+      ;(componentOptions.props || ((componentOptions.props = {}) as any))[k] = options
       componentOptions.model = { prop: k, event: event || k }
     })(target, key)
   }
@@ -187,13 +183,11 @@ export function Model(
  * @param  options the options for the prop
  * @return PropertyDecorator | void
  */
-export function Prop(options: PropOptions | Constructor[] | Constructor = {}) {
+export function Prop(options: ComponentPropsOptions | {[key: string]: any} | Constructor[] | Constructor = {}) {
   return (target: Vue, key: string) => {
     applyMetadata(options, target, key)
     createDecorator((componentOptions, k) => {
-      ;(componentOptions.props || ((componentOptions.props = {}) as any))[
-        k
-      ] = options
+      ;(componentOptions.props || ((componentOptions.props = {}) as any))[k] = options
     })(target, key)
   }
 }
@@ -206,20 +200,18 @@ export function Prop(options: PropOptions | Constructor[] | Constructor = {}) {
  */
 export function PropSync(
   propName: string,
-  options: PropOptions | Constructor[] | Constructor = {},
+  options: ComponentPropsOptions | Constructor[] | Constructor = {}
 ): PropertyDecorator {
   // @ts-ignore
   return (target: Vue, key: string) => {
     applyMetadata(options, target, key)
     createDecorator((componentOptions, k) => {
-      ;(componentOptions.props || (componentOptions.props = {} as any))[
-        propName
-      ] = options
+      ;(componentOptions.props || (componentOptions.props = {} as any))[propName] = options
       ;(componentOptions.computed || (componentOptions.computed = {}))[k] = {
         get() {
           return (this as any)[propName]
         },
-        set(value) {
+        set(value: any) {
           // @ts-ignore
           this.$emit(`update:${propName}`, value)
         },
@@ -264,7 +256,7 @@ const hyphenate = (str: string) => str.replace(hyphenateRE, '-$1').toLowerCase()
  * @return MethodDecorator
  */
 export function Emit(event?: string) {
-  return function (_target: Vue, propertyKey: string, descriptor: any) {
+  return function(_target: Vue, propertyKey: string, descriptor: any) {
     const key = hyphenate(propertyKey)
     const original = descriptor.value
     descriptor.value = function emitter(...args: any[]) {
@@ -280,7 +272,7 @@ export function Emit(event?: string) {
             this.$emit(emitName, ...args)
           }
         } else {
-          args.unshift(returnValue);
+          args.unshift(returnValue)
           this.$emit(emitName, ...args)
         }
       }
@@ -312,8 +304,4 @@ export function Ref(refKey?: string) {
       },
     }
   })
-}
-
-function isPromise(obj: any): obj is Promise<any> {
-  return obj instanceof Promise || (obj && typeof obj.then === 'function')
 }

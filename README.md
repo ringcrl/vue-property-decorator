@@ -1,3 +1,7 @@
+# Vue3 Support
+
+Modify the library to support vue3
+
 # Vue Property Decorator
 
 [![npm](https://img.shields.io/npm/v/vue-property-decorator.svg)](https://www.npmjs.com/package/vue-property-decorator)

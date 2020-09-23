@@ -4,7 +4,7 @@
 import { ComponentPropsOptions, WatchOptions, ComponentOptions } from 'vue'
 import { Options, createDecorator, mixins, Vue } from 'vue-class-component'
 
-export type InjectKey = string | symbol
+export type InjectKey = string
 
 export type Constructor = {
   new (...args: any[]): any
